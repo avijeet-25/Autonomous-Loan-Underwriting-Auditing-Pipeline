@@ -1,62 +1,171 @@
-import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
-import faiss
+import os
+import json
+from typing import Dict, Any
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from app.tools import (
+    calculate_financial_ratios, 
+    check_internal_blacklist_registry, 
+    evaluate_vintage_eligibility
+)
+from app.rag_engine import execute_advanced_rag_lookup
 
-# 1. Initialize Open-Source Embedding and Reranker Models locally on your machine
-# all-MiniLM-L6-v2 maps text to a 384-dimensional vector space.
-# ms-marco-MiniLM-L-6-v2 evaluates the deep cross-attention text similarity score.
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-reranker_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+# 1. Initialize the Real Gemini 2.5 Flash Model Instance
+# hardlocking temperature to 0 minimizes probabilistic variance and hallucinations
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0,
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
 
-# 2. Production Corpus: Authentic Underwriting & Auditing Credit Guidelines
-COMPLIANCE_CORPUS = [
-    "Credit Bureau Governance Mandate: Any application displaying a primary bureau CIBIL score under 650 must be tagged as an automated risk rejection at the gate level, unless explicit collateral security coverage exceeding 150% of the principal requested amount is pledged as an offset liability.",
-    "Unsecured MSME Cash Flow Exposure Limits: Loans lacking explicit physical asset backs are capped at a strict Debt-to-Income (DTI) ratio ceiling of 45%. Any calculated DTI beyond 45% represents a material breach of Reserve Bank of India retail exposure guidelines and cannot be approved without a credit-committee override flag.",
-    "Secured Collateral Margin Requirements: For all secured credit facilities, the Loan-to-Value (LTV) ratio must maintain a safety buffer margin under 80%. If capital request structures push the calculated LTV between 80.01% and 90%, a mandatory Regional Risk Manager sign-off block must be written into the execution ledger.",
-    "Entity Stability and Tenure Mandate: To qualify for unsecured commercial working capital, active entities operating under a sole proprietorship, partnership, or private limited framework must demonstrate a minimum continuous operational business vintage of 3 full uninterrupted fiscal years, verified via active GST registration dates.",
-    "Retail Salaried Risk Underwriting Guidelines: Individual applicants classified as salaried workers must verify a continuous employment tenure baseline of 1.5 years with their current employer, backed by consecutive corporate Provident Fund (PF) contribution logs.",
-    "Statutory Financial Audit Verification: All commercial loan facilities exceeding a principal request threshold of INR 5,00,000 require a verified Income Tax Return (ITR) filed status for the preceding 2 fiscal cycles. Missing or unverified ITR records constitute an automatic compliance deficit, short-circuiting the transaction routing path to a terminal REJECTED state."
-]
-
-# 3. Compile local Vector Database using FAISS
-# Transform the textual policy strings into mathematical vector matrices
-text_embeddings = embedding_model.encode(COMPLIANCE_CORPUS, convert_to_numpy=True)
-dimension = text_embeddings.shape[1]
-
-# Instantiate an optimized L2-distance FAISS index matrix and load the rows
-vector_index = faiss.IndexFlatL2(dimension)
-vector_index.add(text_embeddings)
+# 2. Convert tools to schemas and bind them to the single model instance
+tools_list = [calculate_financial_ratios, check_internal_blacklist_registry, evaluate_vintage_eligibility]
+llm_with_tools = llm.bind_tools(tools_list)
 
 
-def execute_advanced_rag_lookup(query: str, top_k_vector: int = 4, top_n_rerank: int = 2) -> list[str]:
+# --- NODE 1: DATA INGESTION NODE ---
+async def data_ingestion_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Executes a complete 2-Stage Advanced RAG sequence:
-    Stage 1: Dense Semantic Vector Retrieval via the local FAISS index (optimized for speed/recall).
-    Stage 2: Deep Contextual Reranking via a Cross-Encoder network (optimized for precision).
+    Acts as the entry gate to the graph. Extracts user metrics from the state ledger 
+    and injects the system prompt boundaries and initial instructions.
     """
-    # --- STAGE 1: VECTOR RETRIEVAL (Broad Search) ---
-    query_vector = embedding_model.encode([query], convert_to_numpy=True)
+    profile = state["client_profile"]
     
-    # Query FAISS index for the top K closest matches based on Euclidean distance
-    _, indices = vector_index.search(query_vector, top_k_vector)
+    system_instruction = SystemMessage(content=(
+        "You are the Aegis Core Financial Analyst Agent, powered by Gemini 2.5 Flash.\n"
+        "Your role is to completely audit incoming loan applications for Indian retail and MSME clients.\n"
+        "You have access to tools for checking blacklists, calculating financial ratios, and verifying operational vintage.\n"
+        "CRITICAL: Do not attempt to calculate ratios or guess security statuses yourself. You MUST call your tools "
+        "to gather observations before rendering an underwriting synthesis. Keep calling tools until you have all the facts."
+    ))
     
-    # Extract raw text chunks matching the top indexed vector hits
-    retrieved_chunks = [COMPLIANCE_CORPUS[idx] for idx in indices[0] if idx != -1]
+    initial_prompt = HumanMessage(content=(
+        f"Begin full autonomous risk underwriting audit for the following client profile: {json.dumps(profile)}.\n"
+        "Review this profile, determine which tools are required to verify the risk factors, and execute them."
+    ))
     
-    if not retrieved_chunks:
-        return ["Default Governance Policy: General corporate financial risk parameters apply."]
+    return {
+        "current_node": "DATA_INGESTION",
+        "messages": [system_instruction, initial_prompt],
+        "execution_logs": ["System: Data ingestion completed. Seeding state vectors..."]
+    }
+
+
+# --- NODE 2: FINANCIAL ANALYST AGENT (The ReAct Reasoning Core) ---
+async def financial_analyst_agent(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pure cognitive reasoning node. Reads the message history ledger from the state, 
+    invokes Gemini 2.5 Flash, and appends the model's structural text intent or tool request signatures.
+    """
+    messages_history = state["messages"]
+    
+    # Gemini reviews the entire sequence of steps and tool results here
+    response = await llm_with_tools.ainvoke(messages_history)
+    
+    # Extract structural logs to pipe to our stream UI console
+    if response.tool_calls:
+        requested_tools = [tool['name'] for tool in response.tool_calls]
+        log_msg = f"🤖 [Analyst Decision]: Context ledger requires execution of tools: {requested_tools}"
+    else:
+        log_msg = f"🧠 [Analyst Synthesis]: {response.content}"
         
-    # --- STAGE 2: CROSS-ENCODER RERANKING (Deep Text Scoring) ---
-    # Construct pairs of (query, document_chunk) for the cross-attention network
-    rerank_pairs = [[query, chunk] for chunk in retrieved_chunks]
+    return {
+        "current_node": "FINANCIAL_ANALYST_AGENT",
+        "messages": [response], 
+        "execution_logs": [log_msg]
+    }
+
+
+# --- NODE 3: COMPLIANCE AUDITOR AGENT (The Advanced RAG Grounding Core) ---
+async def compliance_auditor_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Advanced RAG Agent node. It executes after the analyst's tool loop finishes. 
+    Queries the local FAISS index for relevant policy clauses and synthesizes a structured verdict.
+    """
+    profile = state["client_profile"]
+    messages_history = state["messages"]
     
-    # Compute the true semantic relevance scores between the query and the documents
-    similarity_scores = reranker_model.predict(rerank_pairs)
+    # Serialize historical entries to inspect tool parameters safely
+    history_string = str([str(m.content) for m in messages_history]).lower()
     
-    # Sort the document indices based on scores in descending order
-    sorted_indices = np.argsort(similarity_scores)[::-1]
+    # Construct a clean semantic query for the FAISS database index
+    rag_query = f"Underwriting threshold rules regarding a CIBIL score of {profile['cibil_score']} and mandatory ITR filing verification."
     
-    # Filter strictly down to the top N context clauses to completely eliminate LLM context noise
-    final_reranked_chunks = [retrieved_chunks[idx] for idx in sorted_indices[:top_n_rerank]]
+    # Run the 2-Stage local RAG lookup
+    reranked_policy_clauses = execute_advanced_rag_lookup(query=rag_query, top_k_vector=4, top_n_rerank=2)
     
-    return final_reranked_chunks
+    auditor_prompt = (
+        f"You are the Aegis Lead Compliance Auditor Agent. Your job is to verify if this applicant matches our official policies.\n\n"
+        f"--- APPLICANT LOGGED METRICS (FROM STATE LEDGER) ---\n"
+        f"CIBIL Bureau Score: {profile['cibil_score']}\n"
+        f"Income Tax Returns (ITR) Filed Status: {profile['itr_filed_status']}\n"
+        f"Full Historical Tool Execution Logs: {history_string}\n\n"
+        f"--- RETRIEVED GROUND-TRUTH REGULATORY CLAUSES (RERANKED) ---\n"
+        f"Clause 1: {reranked_policy_clauses[0]}\n"
+        f"Clause 2: {reranked_policy_clauses[1]}\n\n"
+        f"--- INSTRUCTIONS ---\n"
+        f"Cross-verify the logged metrics against the retrieved regulatory clauses.\n"
+        f"Output a JSON object with exactly two keys:\n"
+        f"1. 'verdict': String, either 'APPROVED' or 'REJECTED'\n"
+        f"2. 'reason': A precise sentence explaining the compliance justification based strictly on the clauses.\n"
+        f"Respond ONLY with raw JSON. Remove any markdown block indicators like ```json."
+    )
+    
+    response = await llm.ainvoke([HumanMessage(content=auditor_prompt)])
+    
+    try:
+        # Clean response string bounds from code blocks if they leaked through
+        clean_json = response.content.replace("```json", "").replace("```", "").strip()
+        parsed_data = json.loads(clean_json)
+        verdict = parsed_data.get("verdict", "REJECTED").upper()
+        reason = parsed_data.get("reason", "Application failed to clear underwriting constraints.")
+    except Exception:
+        verdict = "REJECTED"
+        reason = "System Failure: Failed to parse clean structured JSON compliance matrix from model output."
+        
+    return {
+        "current_node": "COMPLIANCE_AUDITOR_AGENT",
+        "final_verdict": verdict,
+        "messages": [response],
+        "execution_logs": [
+            "🔍 FAISS Index: Contextual vector lookup completed.",
+            "⚡ Cross-Encoder: Rerank verification scored context successfully.",
+            f"⚖️ [Auditor Summary]: {reason}",
+            f"System: Final underwriting verdict locked as [{verdict}]."
+        ]
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
