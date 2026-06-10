@@ -68,3 +68,57 @@ async def financial_analyst_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+async def complilance_auditor_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Advanced RAG Agent node. It executes after the analyst's tool loop finishes.
+    Queries the local FAISS index for relevant policy clauses and synthesizes a structured verdict.
+    """
+    profile = state["client_profile"]
+    messages_history = state["messages"]
+
+    history_string = str([str(m.content) for m in messages_history]).lower()
+
+    rag_query = f"Underwriting threshold rules regarding a CIBIL score of {profile['cibil_score']} and mandatory ITR filing verification."
+
+    reranked_policy_clauses = execute_advanced_rag_lookup(query=rag_query, top_k_vector=4, top_n_rerank=2)
+
+    auditor_prompt = (
+        f"You are the Aegis Lead Compliance Auditor Agent. Your job is to verify if this applicant matches our official policies.\n\n"
+        f"--- APPLICANT LOGGED METRICS (FROM STATE LEDGER) ---\n"
+        f"CIBIL Bureau Score: {profile['cibil_score']}\n"
+        f"Income Tax Returns (ITR) Filed Status: {profile['itr_filed_status']}\n"
+        f"Full Historical Tool Execution Logs: {history_string}\n\n"
+        f"--- RETRIEVED GROUND-TRUTH REGULATORY CLAUSES (RERANKED) ---\n"
+        f"Clause 1: {reranked_policy_clauses[0]}\n"
+        f"Clause 2: {reranked_policy_clauses[1]}\n\n"
+        f"--- INSTRUCTIONS ---\n"
+        f"Cross-verify the logged metrics against the retrieved regulatory clauses.\n"
+        f"Output a JSON object with exactly two keys:\n"
+        f"1. 'verdict': string, either 'APPROVED' or 'REJECTED'\n"
+        f"2. 'reason': A precise sentence explaining the compliance justification based strictly on the clauses.\n"
+        f"Respond ONLY with raw JSON. Remove any markdown block indicators like ```json."
+    )
+
+    response = await llm.ainvoke([HumanMessage(content=auditor_prompt)])
+
+    try:
+        clean_json = response.content.replace("```json","").replace("```","").strip()
+        parsed_data = json.loads(clean_json)
+        verdict = parsed_data.get("verdict", "REJECTED").upper()
+        reason = parsed_data.get("reason", "Application failed to clear underwriting constraints.")
+    except Exception:
+        verdict = "REJECTED"
+        reason = "System Failure: Failed to parse clean structured JSON compliance matrix from model output."
+
+
+    return {
+        "current_node": "COMPLIANCE_AUDITOR_AGENT",
+        "final_verdict": verdict,
+        "messages": [response],
+        "execution_logs": [
+            "🔍 FAISS Index: Contextual vector lookup completed.",
+            "⚡ Cross-Encoder: Rerank verification scored context successfully.",
+            f"⚖️ [Auditor Summary]: {reason}",
+            f"System: Final underwriting verdict locked as [{verdict}]."
+        ]
+    }
