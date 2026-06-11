@@ -2,107 +2,62 @@ from typing import TypedDict, Annotated, Sequence, Dict, Any
 from operator import add
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+
+from app.agents import data_ingestion_node, financial_analyst_agent, complilance_auditor_node
+from app.tools import calculate_financial_ratios, check_internal_blacklist_registry, evaluate_vintage_eligibility
 
 class AgentState(TypedDict):
-    """
-    The unified state object passed between all nodes in our LangGraph pipeline.
-    Uses Annotated[..., add] to continuously append incoming messages and logs
-    without overwriting historical execution traces.
-    """
-
     client_profile: Dict[str, Any]
-
     messages: Annotated[Sequence[BaseMessage], add]
-
     current_node: str
-    underwriting_metrics: Dict[str, Any]
-    blacklist_status: str
-    vintage_status: str
-    final_verdict: str 
-
+    final_verdict: str
     execution_logs: Annotated[list[str], add]
 
 
-async def data_ingestion_node(state: AgentState) -> Dict[str, Any]:
-    """Parses initial Pydantic payload and sets up systemic flags."""
-    return {
-        "current_node": "DATA_INGESTION",
-        "execution_logs": ["Data Ingestion Node: Initialized financial state markers successfully."]
-    }
-
-async def financial_analyst_node(state: AgentState) -> Dict[str, Any]:
-    """Runs calculation loops and analyzes risk ratios."""
-    return {
-        "current_node": "FINANCIAL_ANALYST_AGENT",
-        "execution_logs": ["Financial Analyst Node: Booting ReAct model to process credit and ratio metrics."]
-    }
-
-
-async def compliance_auditor_node(state: AgentState) -> Dict[str, Any]:
-    """Executes RAG lookups against internal compliance documents."""
-    return {
-        "current_node": "COMPLIANCE_AUDITOR_AGENT",
-        "execution_logs": ["Compliance Auditor Node: Querying policy vectors and preparing reranker filtering."]
-    }
-
-async def final_execution_node(state: AgentState) -> Dict[str, Any]:
-    """Finalizes application state records and saves decision outcomes."""
-    return {
-        "current_node": "EXECUTION_NODE",
-        "execution_logs": ["Final Execution Node: Persisting underwriting verdict and broadcasting alerts."]
-    }
-
-
-def router_edge(state: AgentState) -> str:
+def react_router_edge(state: AgentState) -> str:
     """
-    Acts as a traffic cop. Examines the state variables dynamically
-    to decide the next execution path or terminate early if high risks are found.
+    True agentic edge router. Inspects the final entry of the central ledger's message history.
+    If Gemini 2.5 Flash outputted a 'tool_calls' token signature, it routes execution to the tool node.
+    If Gemini outputted a standard text response, it breakes the loop and transitions to the auditor.
     """
 
-    if state.get("blacklist_status") == "FLAGGED":
-        return "route_to_execution"
-    
+    message_history = state["messages"]
+    last_message = messages_history[-1]
 
-    current = state.get("current_node")
-    if current == "DATA_INGESTION":
-        return "route_to_analyst"
-    elif current == "FINANCIAL_ANALYST_AGENT":
-        return "route_to_auditor"
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "call_tools"
     
-    return "route_to_execution"
-
+    return "end_loop"
 
 workflow = StateGraph(AgentState)
 
-
 workflow.add_node("ingestion", data_ingestion_node)
-workflow.add_node("analyst", financial_analyst_node)
-workflow.add_node("auditor", compliance_auditor_node)
-workflow.add_node("execution", final_execution_node)
+workflow.add_node("analyst_brain", financial_analyst_agent)
+workflow.add_node("compliance_auditor", compliance_auditor_node)
+
+
+functional_tools_node = ToolNode([
+    calculate_financial_ratios,
+    check_internal_blacklist_registry,
+    evaluate_vintage_eligibility
+])
+workflow.add_node("tools_runner", functional_tools_node)
 
 workflow.set_entry_point("ingestion")
+workflow.add_edge("ingestion", "analyst_brain")
 
 workflow.add_conditional_edges(
-    "ingestion",
-    router_edge,
+    "analyst_brain",
+    react_router_edge,
     {
-        "route_to_analyst": "analyst",
-        "route_to_execution": "execution"
+        "call_tools": "tools_runner",
+        "end_loop": "compliance_auditor"
     }
 )
 
-workflow.add_conditional_edges(
-    "analyst",
-    router_edge,
-    {
-        "route_to_auditor": "auditor",
-        "route_to_execution": "execution"
-    }
-)
+workflow.add_edge("tools_runner", "analyst_brain")
 
-workflow.add_edge("auditor", "execution")
-workflow.add_edge("execution", END)
-
+workflow.add_edge("compliance_auditor", END)
 
 compiled_graph = workflow.compile()
-
