@@ -137,4 +137,3 @@ if submit_btn:
 
     except Exception as network_err:
         st.error(f"Failed to communicate with Aegis Core Microservice Server at {BACKEND_API_URL}. Details: {str(network_err)}")
-        
