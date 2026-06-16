@@ -92,7 +92,7 @@ if submit_btn:
         "monthly_income_or_turnover": float(monthly_income_or_turnover),
         "existing_debt": float(existing_debt),
         "requested_amount": float(requested_amount),
-        "collateral_value": float(collateral_value)
+        "collateral_value": float(collateral_value),
         "employment_type": employment_type,
         "business_vintage_years": float(business_vintage_years),
         "itr_filed_status": bool(itr_filed_status)
