@@ -14,7 +14,6 @@ from app.rag_engine import execute_advanced_rag_lookup
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
-    google_api_key="AIzaSyCoMqC2FknWg8wR_JGhpAyYq23c2Gf_tVY"
 )
 
 tools_list = [calculate_financial_ratios, check_internal_blacklist_registry, evaluate_vintage_eligibility]
