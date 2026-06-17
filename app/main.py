@@ -1,14 +1,16 @@
+from dotenv import load_dotenv
+load_dotenv() 
 import os
 import json
 import asyncio
-from fastapi import FASTAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware 
 from fastapi.responses import StreamingResponse
 
 from app.schemas import LoanApplicationSchema
 from app.graph import compiled_graph
 
-app = FASTAPI(
+app = FastAPI(
     title="Aegis: Autonomous Underwriting Engine Core Server",
     description="Production-grade asynchronous multi-agent streaming API engine running LangGraph and Gemini 2.5 Flash",
     version="1.0.0"

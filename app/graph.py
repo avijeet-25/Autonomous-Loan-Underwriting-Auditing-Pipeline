@@ -4,7 +4,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
-from app.agents import data_ingestion_node, financial_analyst_agent, complilance_auditor_node
+from app.agents import data_ingestion_node, financial_analyst_agent, compliance_auditor_node
 from app.tools import calculate_financial_ratios, check_internal_blacklist_registry, evaluate_vintage_eligibility
 
 class AgentState(TypedDict):

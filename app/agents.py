@@ -14,7 +14,7 @@ from app.rag_engine import execute_advanced_rag_lookup
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
-    google_api_key=os.getenv("GOOGLE_API_KEY")
+    google_api_key="AIzaSyCoMqC2FknWg8wR_JGhpAyYq23c2Gf_tVY"
 )
 
 tools_list = [calculate_financial_ratios, check_internal_blacklist_registry, evaluate_vintage_eligibility]
@@ -68,7 +68,7 @@ async def financial_analyst_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def complilance_auditor_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def compliance_auditor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Advanced RAG Agent node. It executes after the analyst's tool loop finishes.
     Queries the local FAISS index for relevant policy clauses and synthesizes a structured verdict.
