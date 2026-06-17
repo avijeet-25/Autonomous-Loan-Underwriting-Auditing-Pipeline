@@ -32,7 +32,9 @@ async def data_ingestion_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "Your role is to completely audit incoming loan applications for Indian retail and MSME clients.\n"
         "You have access to tools for checking blacklists, calculating financial ratios, and verifying operational vintage.\n"
         "CRITICAL: Do not attempt to calculate ratios or guess security statuses yourself. You MUST call your tools"
-        "to gather observations before rendering an underwriting systhesis. Keep calling tools until you have all the facts."
+        "to gather observations before rendering an underwriting synthesis. Keep calling tools until you have all the facts."
+        "CRITICAL: Call exactly ONE tool per response. Never call multiple tools in the same response. "
+        "After each tool result, inspect the updated ledger and then decide the next single tool if needed. "
     ))
 
     initial_prompt = HumanMessage(content=(
@@ -51,7 +53,7 @@ async def financial_analyst_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     Pure cognitive reasoning node. Reads the message history ledger from the state,
     invokes Gemini 2.5 Flash, and appends the model's structural text intent or tool request signatures.
     """
-    messages_history = state["messages"]
+    messages_history = state.get("messages", [])
 
     response = await llm_with_tools.ainvoke(messages_history)
 
@@ -74,7 +76,7 @@ async def compliance_auditor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     Queries the local FAISS index for relevant policy clauses and synthesizes a structured verdict.
     """
     profile = state["client_profile"]
-    messages_history = state["messages"]
+    messages_history = state.get("messages", [])
 
     history_string = str([str(m.content) for m in messages_history]).lower()
 

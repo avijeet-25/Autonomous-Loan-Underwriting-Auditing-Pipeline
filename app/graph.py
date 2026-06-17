@@ -23,7 +23,7 @@ def react_router_edge(state: AgentState) -> str:
     """
 
     message_history = state["messages"]
-    last_message = messages_history[-1]
+    last_message = message_history[-1]
 
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "call_tools"

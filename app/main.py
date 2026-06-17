@@ -1,3 +1,5 @@
+import os
+os.environ["GOOGLE_API_KEY"] = "AIzaSyCoMqC2FknWg8wR_JGhpAyYq23c2Gf_tVY"
 from dotenv import load_dotenv
 load_dotenv() 
 import os
