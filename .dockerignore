@@ -1,0 +1,20 @@
+# Ignore local git and development files
+.git
+.gitignore
+.dockerignore
+
+# Ignore local environment/python caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Ignore local secrets and configurations
+.env
+*.env
+secrets.py
+
+# Ignore local documentation or extra assets not needed for the container
+README.md
+.vscode/
+.idea/

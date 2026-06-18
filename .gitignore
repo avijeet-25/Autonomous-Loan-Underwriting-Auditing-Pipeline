@@ -1,0 +1,17 @@
+# Sensitive keys and local config
+.env
+*.env
+config.json
+secrets.py
+
+# Python environment and build files
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+.env/
+
+# OS specific files
+.DS_Store
+Thumbs.db
