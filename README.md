@@ -1,3 +1,11 @@
+---
+title: Loan Underwriting Agent
+emoji: 📊
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
 ========================================================================
 AEGIS: AUTONOMOUS LOAN UNDERWRITING & AUDITING MULTI-AGENT PIPELINE
 ========================================================================
