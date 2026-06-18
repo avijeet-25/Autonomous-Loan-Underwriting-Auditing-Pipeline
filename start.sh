@@ -1,2 +1,3 @@
-python -m streamlit run app.py &
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+python -m streamlit run frontend/app.py --server.port 7860 --server.address 0.0.0.0 &
+python -m uvicorn main:app --app-dir app --host 0.0.0.0 --port 8000
