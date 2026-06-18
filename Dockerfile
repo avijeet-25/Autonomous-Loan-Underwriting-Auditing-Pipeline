@@ -13,6 +13,9 @@ RUN chown -R user:user /home/user/app
 # 3. Switch to user for everything else
 USER user
 
+# Add this to Dockerfile
+ENV PATH="/home/user/.local/bin:${PATH}"
+
 # 4. Copy requirements and install
 # We use the build cache mount here to stop the "re-downloading GBs" problem
 COPY --chown=user:user requirements.txt .
